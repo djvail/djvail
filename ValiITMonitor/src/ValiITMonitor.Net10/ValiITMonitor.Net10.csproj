@@ -1,0 +1,52 @@
+<!--
+  ValiITMonitor - modern .NET 10 edition.
+
+  SDK-style project: files in this folder are compiled automatically (no <Compile Include> list),
+  and NuGet packages are listed right here as <PackageReference> (no packages.config).
+-->
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <!-- "-windows" lets us use Windows-only APIs (services, performance counters, event log). -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ValiITMonitor</AssemblyName>
+    <RootNamespace>ValiITMonitor</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>ValiITMonitor</Product>
+
+    <!-- Modern C# conveniences: nullable reference type checks and implicit 'using System;' etc. -->
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Build for 64-bit Windows. Allows building on Linux/macOS too (as this project was). -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- Keep the memory footprint small: workstation, non-concurrent GC (no background GC thread). -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- Only ship English resources from the NuGet packages. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Needed by [LibraryImport] (source-generated P/Invoke) in Collection/NativeMethods.cs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Tells the GC to favour a smaller heap over raw speed (0-9). -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.15" />
+    <PackageReference Include="QuestPDF" Version="2026.9.2" />
+    <PackageReference Include="ScottPlot" Version="5.1.59" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+</Project>
