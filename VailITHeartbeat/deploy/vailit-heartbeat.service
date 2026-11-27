@@ -1,0 +1,26 @@
+# systemd unit for running VailITHeartbeat on a small Linux VM / VPS / Raspberry Pi.
+#
+#   dotnet publish src/VailITHeartbeat -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o publish/linux-x64
+#   sudo mkdir -p /opt/vailit-heartbeat && sudo cp -r publish/linux-x64/* /opt/vailit-heartbeat/
+#   sudo cp deploy/vailit-heartbeat.service /etc/systemd/system/
+#   sudo systemctl edit vailit-heartbeat      # add:  [Service]  Environment=Email__Password=...
+#   sudo systemctl enable --now vailit-heartbeat
+#   journalctl -u vailit-heartbeat -f
+[Unit]
+Description=VailIT Heartbeat (external dashboard check)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/opt/vailit-heartbeat/VailITHeartbeat
+WorkingDirectory=/opt/vailit-heartbeat
+DynamicUser=yes
+StateDirectory=vailit-heartbeat
+Environment=Heartbeat__StateFile=/var/lib/vailit-heartbeat/heartbeat-state.json
+Environment=DOTNET_gcServer=0
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

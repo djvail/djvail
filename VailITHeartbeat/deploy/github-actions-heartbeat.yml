@@ -1,0 +1,62 @@
+# Sample GitHub Actions workflow: runs the heartbeat check every 5 minutes on GitHub's servers.
+#
+# To use it, copy this file to .github/workflows/heartbeat.yml in a repository, then add these
+# repository secrets (Settings > Secrets and variables > Actions):
+#   DASHBOARD_HEALTH_URL   e.g. https://dashboard.example.com/api/v1/health
+#   SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, EMAIL_FROM, EMAIL_TO
+#
+# Notes: GitHub runs scheduled workflows "best effort" (often a few minutes late, sometimes more),
+# and pauses them in public repositories after 60 days without commits. Fine as a free backup,
+# but a VM or a hosted uptime monitor is more dependable as your main alarm.
+name: Dashboard heartbeat
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: heartbeat
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Keeps "who is down / when did we last email" between runs, so you get one email, not one per run.
+      - uses: actions/cache/restore@v4
+        with:
+          path: heartbeat-state.json
+          key: heartbeat-state-${{ github.run_id }}
+          restore-keys: heartbeat-state-
+
+      - name: Check dashboard
+        env:
+          Heartbeat__StateFile: ${{ github.workspace }}/heartbeat-state.json
+          Heartbeat__Targets__0__Url: ${{ secrets.DASHBOARD_HEALTH_URL }}
+          Heartbeat__Targets__0__FailuresBeforeAlert: '2'
+          Email__SmtpHost: ${{ secrets.SMTP_HOST }}
+          Email__SmtpPort: ${{ secrets.SMTP_PORT }}
+          Email__Username: ${{ secrets.SMTP_USERNAME }}
+          Email__Password: ${{ secrets.SMTP_PASSWORD }}
+          Email__From: ${{ secrets.EMAIL_FROM }}
+          Email__To__0: ${{ secrets.EMAIL_TO }}
+        # Exit code 1 (dashboard failing) is expected and already emailed, so do not fail the job for it.
+        run: |
+          set +e
+          dotnet run --project VailITHeartbeat/src/VailITHeartbeat -c Release -- once
+          code=$?
+          [ $code -le 1 ] || exit $code
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: heartbeat-state.json
+          key: heartbeat-state-${{ github.run_id }}

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VailITHeartbeat/VailITHeartbeat.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VailITHeartbeat.Tests/VailITHeartbeat.Tests.csproj" />
+  </Folder>
+</Solution>
