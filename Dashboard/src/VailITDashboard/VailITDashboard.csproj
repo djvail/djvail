@@ -1,0 +1,40 @@
+<!--
+  VailITDashboard - receives reports from VailITMonitor services, shows them grouped by server type,
+  checks each machine against its thresholds and emails when something needs looking at.
+
+  Build:   dotnet build
+  Run:     dotnet run            (http://localhost:5080)
+  Publish: see scripts\Publish-VailITDashboard.ps1
+-->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>VailITDashboard</AssemblyName>
+    <RootNamespace>VailITDashboard</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>VailITDashboard</Product>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SQLite database (same library VailITMonitor uses). -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="10.0.15" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+    <!-- Sending email over SMTP. System.Net.Mail.SmtpClient is marked "not recommended" by Microsoft. -->
+    <PackageReference Include="MailKit" Version="5.0.0" />
+    <!-- Lets the dashboard run as a Windows service (no-op when started by hand). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Shared\VailIT.Reporting.Contracts\VailIT.Reporting.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="VailITDashboard.Tests" />
+  </ItemGroup>
+
+</Project>

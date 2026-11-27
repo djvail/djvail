@@ -1,0 +1,58 @@
+@page
+@model ThresholdsModel
+@{
+    ViewData["Title"] = "Thresholds";
+}
+<div class="page-head">
+    <div>
+        <h1>Thresholds</h1>
+        <div class="muted">The most specific one wins: a machine's own threshold, then its group's, then the global one.</div>
+    </div>
+</div>
+
+<div class="grid-2" style="grid-template-columns: minmax(220px, 1fr) 3fr">
+    <div class="panel">
+        <h3>Level</h3>
+        <table class="data">
+            <tr><td><a href="/thresholds" style="@(Model.Scope == ThresholdScope.Global ? "font-weight:600" : "")">Global (everyone)</a></td><td></td></tr>
+            <tr class="cat"><td colspan="2">Groups</td></tr>
+            @foreach (var (group, count, overrides) in Model.Groups)
+            {
+                var current = Model.Scope == ThresholdScope.Group && group.Equals(Model.ScopeValue, StringComparison.OrdinalIgnoreCase);
+                <tr>
+                    <td><a href="/thresholds?scope=group&value=@Uri.EscapeDataString(group)" style="@(current ? "font-weight:600" : "")">@group</a>
+                        <span class="muted small">@count</span></td>
+                    <td class="num small muted">@(overrides > 0 ? $"{overrides} set" : "")</td>
+                </tr>
+            }
+            @if (Model.MachineOverrides.Count > 0)
+            {
+                <tr class="cat"><td colspan="2">Machines with their own</td></tr>
+                @foreach (var (machine, overrides) in Model.MachineOverrides)
+                {
+                    <tr><td><a href="/machines/@machine.MachineId/thresholds">@machine.Name</a></td><td class="num small muted">@overrides set</td></tr>
+                }
+            }
+        </table>
+        <form method="get" action="/thresholds" class="row" style="margin-top:12px">
+            <input type="hidden" name="scope" value="group" />
+            <input type="text" name="value" placeholder="New group name" size="14" />
+            <button class="btn small" type="submit">Open</button>
+        </form>
+    </div>
+
+    <div class="panel">
+        <h2>@(Model.Scope == ThresholdScope.Global ? "Global thresholds" : $"Group: {Model.ScopeValue}")</h2>
+        <p class="muted small">
+            @if (Model.Scope == ThresholdScope.Global)
+            {
+                <text>Apply to every machine unless its group or the machine itself says otherwise.</text>
+            }
+            else
+            {
+                <text>Apply to every machine in "@Model.ScopeValue" and replace the global value for the same reading.</text>
+            }
+        </p>
+        <partial name="_ThresholdEditor" model="Model.Editor" />
+    </div>
+</div>

@@ -1,0 +1,71 @@
+@page
+@model MonitorsModel
+@{
+    ViewData["Title"] = "Monitors & keys";
+}
+<div class="page-head">
+    <div>
+        <h1>Monitors &amp; keys</h1>
+        <div class="muted">Each VailITMonitor sends its reports with its own API key. Make one key per server.</div>
+    </div>
+</div>
+
+@if (Model.NewKey is not null)
+{
+    <div class="panel" style="border-color: var(--accent)">
+        <h2>New key for "@Model.NewKeyLabel"</h2>
+        <p>Copy it now: it is stored hashed and <b>can't be shown again</b>.</p>
+        <div class="row"><div class="keybox" id="newkey">@Model.NewKey</div><button class="btn" data-copy="#newkey" type="button">Copy</button></div>
+        <p class="muted small" style="margin-top:10px">On the server, install or update the monitor with:</p>
+        <pre class="keybox small">.\Install-VailITMonitor.ps1 -Edition Net10 -DashboardUrl @Model.PublicUrl -ApiKey @Model.NewKey</pre>
+        <p class="muted small">The key is tied to the first machine that reports with it.</p>
+    </div>
+}
+
+<div class="panel">
+    <h2>Create a key</h2>
+    <form method="post" asp-page-handler="Create" class="row">
+        <input type="text" name="label" placeholder="Which server, e.g. SQL01" size="30" />
+        <button class="btn primary" type="submit">Create key</button>
+    </form>
+</div>
+
+<div class="panel">
+    <h2>Keys</h2>
+    @if (Model.Keys.Count == 0) { <p class="muted">No keys yet.</p> }
+    else
+    {
+        <table class="data">
+            <tr><th>Key</th><th>Label</th><th>Machine</th><th>Created</th><th>Last used</th><th></th></tr>
+            @foreach (var k in Model.Keys)
+            {
+                <tr class="@(k.Revoked is null ? "" : "muted")">
+                    <td><code>@k.KeyPrefix…</code></td>
+                    <td>@k.Label</td>
+                    <td>@if (k.MachineId is not null && Model.Machines.ContainsKey(k.MachineId)) { <a href="/machines/@k.MachineId">@Model.NameOf(k.MachineId)</a> } else { @Model.NameOf(k.MachineId) }</td>
+                    <td class="muted">@Format.Local(k.Created)</td>
+                    <td class="muted">@(k.LastUsed is long u ? Format.Ago(u) : "never")</td>
+                    <td>
+                        @if (k.Revoked is null)
+                        {
+                            <form method="post" asp-page-handler="Revoke" class="inline">
+                                <input type="hidden" name="id" value="@k.Id" />
+                                <button class="btn small danger" type="submit" data-confirm="Revoke this key? The monitor using it will stop reporting.">Revoke</button>
+                            </form>
+                        }
+                        else { <span class="chip neutral">revoked</span> }
+                    </td>
+                </tr>
+            }
+        </table>
+    }
+</div>
+
+<div class="panel">
+    <h2>For the monitor</h2>
+    <dl class="facts">
+        <dt>Report URL</dt><dd><code>POST @Model.PublicUrl/api/v1/reports</code> with header <code>X-Api-Key</code></dd>
+        <dt>Key check</dt><dd><code>GET @Model.PublicUrl/api/v1/monitors/me</code></dd>
+        <dt>Heartbeat</dt><dd><code>GET @Model.PublicUrl/api/v1/health</code> (no key needed)</dd>
+    </dl>
+</div>

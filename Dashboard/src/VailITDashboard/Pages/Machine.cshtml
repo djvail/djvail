@@ -1,0 +1,188 @@
+@page "/machines/{id}"
+@model MachineModel
+@{
+    var m = Model.Machine;
+    var s = Model.Status;
+    ViewData["Title"] = m.Name;
+    ViewData["Refresh"] = 60;
+    var css = StatusService.CssClass(s.Health);
+}
+<div class="page-head">
+    <div>
+        <div class="muted small"><a href="/?group=@Uri.EscapeDataString(m.GroupName)">@m.GroupName</a> /</div>
+        <h1>@m.Name <span class="chip @css">@(s.Health == MachineHealth.Stale ? "late" : s.Health.ToString())</span>
+            @if (s.Muted) { <span class="chip muted">muted until @Format.Local(m.MutedUntil)</span> }</h1>
+        <div class="muted">Last report @Format.Ago(m.LastSeen) · @m.Os · VailITMonitor @m.AgentVersion @m.Edition</div>
+    </div>
+    <div class="row">
+        <a class="btn" href="/machines/@m.MachineId/thresholds">Thresholds</a>
+        <form method="post" asp-page-handler="Mute" asp-route-id="@m.MachineId" class="row">
+            @if (s.Muted)
+            {
+                <input type="hidden" name="hours" value="0" />
+                <button class="btn" type="submit">Unmute emails</button>
+            }
+            else
+            {
+                <select name="hours" aria-label="Mute for">
+                    <option value="1">1 hour</option><option value="4">4 hours</option><option value="24">1 day</option><option value="168">1 week</option>
+                </select>
+                <button class="btn" type="submit" title="Stop emails for this machine, e.g. during maintenance">Mute emails</button>
+            }
+        </form>
+    </div>
+</div>
+
+@if (Model.OpenAlerts.Count > 0)
+{
+    <div class="panel">
+        <h2>Open problems</h2>
+        <table class="data">
+            <tr><th>Level</th><th>Problem</th><th>Since</th><th></th></tr>
+            @foreach (var a in Model.OpenAlerts)
+            {
+                <tr>
+                    <td><span class="chip @a.Level.ToString().ToLowerInvariant()">@a.Level</span></td>
+                    <td>@a.Message</td>
+                    <td class="muted">@Format.Local(a.Opened) (@Format.Ago(a.Opened))</td>
+                    <td>
+                        @if (a.Acknowledged is null)
+                        {
+                            <form method="post" asp-page-handler="Acknowledge" asp-route-id="@m.MachineId" class="inline">
+                                <input type="hidden" name="alertId" value="@a.Id" />
+                                <button class="btn small" type="submit" title="Say someone is looking at it">Acknowledge</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <span class="muted small">ack'd by @a.AcknowledgedBy</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </table>
+    </div>
+}
+
+<div class="page-head">
+    <h2>History</h2>
+    <div class="tabs">
+        @foreach (var (label, hours) in MachineModel.Ranges)
+        {
+            <a href="?hours=@hours" class="@(Model.Hours == hours ? "active" : "")">@label</a>
+        }
+    </div>
+</div>
+<div class="grid-2">
+    @foreach (var c in Model.Charts)
+    {
+        <div class="panel">
+            <h3>@c.Title</h3>
+            @c.Svg
+            <div class="legend">
+                @for (int i = 0; i < c.Legend.Count; i++) { <span><i class="bg-@(i % 6)"></i>@c.Legend[i]</span> }
+            </div>
+        </div>
+    }
+</div>
+
+<div class="grid-2">
+    <div class="panel">
+        <h2>Current readings</h2>
+        <table class="data">
+            <tr><th>Reading</th><th class="num">Value</th><th>Threshold (warn / crit)</th><th></th></tr>
+            @foreach (var cat in Model.Rows.Where(r => r.Reading.Metric != "cpu.core_pct").GroupBy(r => r.Category))
+            {
+                <tr class="cat"><td colspan="4">@cat.Key</td></tr>
+                @foreach (var r in cat)
+                {
+                    var unit = MetricCatalog.Unit(r.Reading.Metric);
+                    <tr>
+                        <td>@MetricCatalog.Label(r.Reading.Key)</td>
+                        <td class="num">@Format.Value(r.Reading.Value, unit)</td>
+                        <td class="small">
+                            @if (r.Threshold is { } t)
+                            {
+                                if (!t.Enabled) { <span class="muted">off for this @(t.Scope == ThresholdScope.Machine ? "machine" : "group")</span> }
+                                else
+                                {
+                                    <span>@(t.Direction == ThresholdDirection.Above ? "≥" : "≤") @(t.Warning is double w ? Format.Value(w, unit) : "-") / @(t.Critical is double cr ? Format.Value(cr, unit) : "-")</span>
+                                    <span class="muted"> · @t.Scope.ToString().ToLowerInvariant()</span>
+                                }
+                            }
+                        </td>
+                        <td>@if (r.Level != AlertLevel.Ok) { <span class="chip @r.Level.ToString().ToLowerInvariant()">@r.Level</span> }</td>
+                    </tr>
+                }
+            }
+        </table>
+        @{ var cores = Model.Rows.Where(r => r.Reading.Metric == "cpu.core_pct").ToList(); }
+        @if (cores.Count > 0)
+        {
+            <details><summary class="muted small">CPU per core (@cores.Count)</summary>
+                <table class="data">
+                    @foreach (var r in cores) { <tr><td>@MetricCatalog.Label(r.Reading.Key)</td><td class="num">@Format.Value(r.Reading.Value, "%")</td></tr> }
+                </table>
+            </details>
+        }
+        <p class="muted small">Readings from @Format.Local(m.LastSampleTs). <a href="/machines/@m.MachineId/thresholds">Change thresholds</a></p>
+    </div>
+
+    <div>
+        <div class="panel">
+            <h2>Machine</h2>
+            <dl class="facts">
+                <dt>Computer name</dt><dd>@m.MachineName</dd>
+                <dt>Operating system</dt><dd>@m.Os</dd>
+                <dt>Processors</dt><dd>@m.LogicalProcessors logical</dd>
+                <dt>Memory</dt><dd>@Format.Value(m.TotalMemoryMb / 1024.0, "GB")</dd>
+                <dt>Drives</dt><dd>@(Model.Drives.Count == 0 ? "-" : string.Join(", ", Model.Drives.Select(d => $"{d.Name} {Format.Value(d.SizeGb, "GB")}")))</dd>
+                <dt>Last boot</dt><dd>@Format.Local(m.LastBootUtc)</dd>
+                <dt>Monitor</dt><dd>VailITMonitor @m.AgentVersion (@m.Edition)</dd>
+                <dt>Tags</dt><dd>@(string.IsNullOrEmpty(m.Tags) ? "-" : m.Tags)</dd>
+                <dt>First seen</dt><dd>@Format.Local(m.FirstSeen)</dd>
+                <dt>Machine id</dt><dd><code>@m.MachineId</code></dd>
+            </dl>
+        </div>
+        <div class="panel">
+            <h2>Dashboard settings</h2>
+            <form method="post" asp-page-handler="Settings" asp-route-id="@m.MachineId">
+                <label class="field"><span>Display name (blank = computer name)</span><input type="text" name="displayName" value="@m.DisplayName" placeholder="@m.MachineName" /></label>
+                <label class="field"><span>Group (server type)</span><input type="text" name="group" value="@m.GroupName" list="groups" required /></label>
+                <datalist id="groups">@foreach (var g in Model.Groups) { <option value="@g"></option> }</datalist>
+                <label class="field"><span>Notes</span><textarea name="notes">@m.Notes</textarea></label>
+                <button class="btn primary" type="submit">Save</button>
+                <span class="muted small">The monitor suggested "@m.ServerTypeHint"; your group wins.</span>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Alert history</h2>
+    @if (Model.History.Count == 0) { <p class="muted">No alerts yet.</p> }
+    else
+    {
+        <table class="data">
+            <tr><th>Worst</th><th>Problem</th><th>Opened</th><th>Closed</th><th>Acknowledged</th></tr>
+            @foreach (var a in Model.History)
+            {
+                <tr>
+                    <td><span class="chip @a.PeakLevel.ToString().ToLowerInvariant()">@a.PeakLevel</span></td>
+                    <td>@a.Message</td>
+                    <td class="muted">@Format.Local(a.Opened)</td>
+                    <td class="muted">@(a.IsOpen ? "open" : Format.Local(a.Closed))</td>
+                    <td class="muted">@(a.AcknowledgedBy ?? "-")</td>
+                </tr>
+            }
+        </table>
+    }
+</div>
+
+<div class="panel">
+    <h2>Remove machine</h2>
+    <p class="muted">For a decommissioned server: deletes its readings, alerts, thresholds and revokes its keys.</p>
+    <form method="post" asp-page-handler="Delete" asp-route-id="@m.MachineId">
+        <button class="btn danger" type="submit" data-confirm="Remove @m.Name and all of its history?">Remove @m.Name</button>
+    </form>
+</div>

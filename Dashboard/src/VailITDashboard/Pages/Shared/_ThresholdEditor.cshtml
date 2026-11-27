@@ -1,0 +1,74 @@
+@*
+    Editor for the thresholds at one level (Global, one group, or one machine).
+    Every form posts to /thresholds (ThresholdsModel.OnPostSave / OnPostDelete), then returns to ReturnUrl.
+*@
+@model ThresholdEditorModel
+@{
+    string Fmt(double? v) => v?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+}
+<table class="data">
+    <tr><th>Reading</th><th>Instance</th><th>Alert when</th><th>Warning</th><th>Critical</th><th>On</th><th></th></tr>
+    @foreach (var t in Model.Thresholds)
+    {
+        var f = "t" + t.Id;
+        var unit = MetricCatalog.Unit(t.Metric);
+        <tr>
+            <td>@MetricCatalog.Get(t.Metric).Label <span class="muted small">@(unit.Length > 0 ? $"({unit})" : "")</span></td>
+            <td>@MetricCatalog.InstanceLabel(t.Instance)</td>
+            <td>
+                <select name="direction" form="@f">
+                    <option value="Above" selected="@(t.Direction == ThresholdDirection.Above)">at or above</option>
+                    <option value="Below" selected="@(t.Direction == ThresholdDirection.Below)">at or below</option>
+                </select>
+            </td>
+            <td><input type="number" step="any" name="warning" value="@Fmt(t.Warning)" form="@f" /></td>
+            <td><input type="number" step="any" name="critical" value="@Fmt(t.Critical)" form="@f" /></td>
+            <td><input type="checkbox" name="enabled" value="true" checked="@t.Enabled" form="@f" title="Untick to switch this check off at this level" /></td>
+            <td class="row">
+                <form method="post" action="/thresholds?handler=Save" asp-antiforgery="true" id="@f" class="inline">
+                    <input type="hidden" name="scope" value="@Model.Scope" />
+                    <input type="hidden" name="scopeValue" value="@Model.ScopeValue" />
+                    <input type="hidden" name="metric" value="@t.Metric" />
+                    <input type="hidden" name="instance" value="@t.Instance" />
+                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                    <button class="btn small" type="submit">Save</button>
+                </form>
+                <form method="post" action="/thresholds?handler=Delete" asp-antiforgery="true" class="inline">
+                    <input type="hidden" name="id" value="@t.Id" />
+                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                    <button class="btn small danger" type="submit" data-confirm="Remove this threshold?">Remove</button>
+                </form>
+            </td>
+        </tr>
+    }
+    @if (!Model.Thresholds.Any())
+    {
+        <tr><td colspan="7" class="muted">@Model.EmptyText</td></tr>
+    }
+</table>
+
+<h3 style="margin-top:16px">Add or replace a threshold</h3>
+<form method="post" action="/thresholds?handler=Save" asp-antiforgery="true" class="row">
+    <input type="hidden" name="scope" value="@Model.Scope" />
+    <input type="hidden" name="scopeValue" value="@Model.ScopeValue" />
+    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+    <select name="metric" aria-label="Reading" required>
+        @foreach (var (metric, info) in MetricCatalog.Thresholdable)
+        {
+            <option value="@metric">@info.Label @(info.Unit.Length > 0 ? $"({info.Unit})" : "")</option>
+        }
+    </select>
+    <input type="text" name="instance" value="*" size="6" title="* = every drive/adapter/core; or one, e.g. C:" aria-label="Instance" list="instances" />
+    <datalist id="instances">@foreach (var i in Model.KnownInstances) { <option value="@i"></option> }</datalist>
+    <select name="direction" aria-label="Alert when">
+        <option value="Above">at or above</option>
+        <option value="Below">at or below</option>
+    </select>
+    <input type="number" step="any" name="warning" placeholder="warning" aria-label="Warning" />
+    <input type="number" step="any" name="critical" placeholder="critical" aria-label="Critical" />
+    <label class="row small"><input type="checkbox" name="enabled" value="true" checked /> on</label>
+    <button class="btn primary" type="submit">Save threshold</button>
+</form>
+<p class="muted small">Instance <code>*</code> means every drive, adapter or core. Use e.g. <code>D:</code> for one drive.
+    Untick "on" to switch a check off at this level only (for example a D: drive that is meant to be full).
+    "Disk free" and "Memory available" should use <em>at or below</em>.</p>
