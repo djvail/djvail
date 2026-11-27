@@ -1,0 +1,14 @@
+<Project>
+  <!-- Settings shared by every project in the solution. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0</Version>
+    <Company>VailIT</Company>
+    <Product>VailIT Code Clean</Product>
+    <Copyright>Copyright (c) VailIT</Copyright>
+    <!-- Lets the Windows (WinForms) project build on any OS, e.g. in CI. It still only RUNS on Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+</Project>

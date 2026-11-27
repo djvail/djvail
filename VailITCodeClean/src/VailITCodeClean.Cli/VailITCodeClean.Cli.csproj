@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Command-line version: same engine as the Windows app, handy for scripts, CI pipelines and automation. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VailIT.CodeClean.Cli</RootNamespace>
+    <AssemblyName>vailit-codeclean</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VailITCodeClean.Core\VailITCodeClean.Core.csproj" />
+  </ItemGroup>
+</Project>

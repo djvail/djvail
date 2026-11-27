@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Windows desktop application (WinForms). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>VailIT.CodeClean.App</RootNamespace>
+    <AssemblyName>VailITCodeClean</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+    <ApplicationDefaultFont>Segoe UI, 9pt</ApplicationDefaultFont>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VailITCodeClean.Core\VailITCodeClean.Core.csproj" />
+  </ItemGroup>
+</Project>

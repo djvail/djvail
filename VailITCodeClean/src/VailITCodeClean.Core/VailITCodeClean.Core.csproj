@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The scanning / scrubbing / reporting engine. No UI code lives here, so the
+       Windows app, the command-line tool and the tests all share exactly the same logic. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>VailIT.CodeClean</RootNamespace>
+    <AssemblyName>VailITCodeClean.Core</AssemblyName>
+  </PropertyGroup>
+</Project>
