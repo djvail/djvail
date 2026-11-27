@@ -1,0 +1,77 @@
+@page
+@model AlertsModel
+@{
+    ViewData["Title"] = "Alerts";
+    ViewData["Refresh"] = 60;
+}
+<div class="page-head">
+    <div>
+        <h1>Alerts</h1>
+        <div class="muted">@Model.Open.Count open · a problem must last @Model.Settings.ConsecutiveReports reports in a row before it alerts</div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Open</h2>
+    @if (Model.Open.Count == 0) { <p class="muted">Nothing needs looking at.</p> }
+    else
+    {
+        <table class="data">
+            <tr><th>Level</th><th>Machine</th><th>Problem</th><th>Since</th><th></th></tr>
+            @foreach (var a in Model.Open)
+            {
+                <tr>
+                    <td><span class="chip @a.Level.ToString().ToLowerInvariant()">@a.Level</span></td>
+                    <td><a href="/machines/@a.MachineId">@Model.NameOf(a.MachineId)</a></td>
+                    <td>@a.Message</td>
+                    <td class="muted">@Format.Ago(a.Opened)</td>
+                    <td>
+                        @if (a.Acknowledged is null)
+                        {
+                            <form method="post" asp-page-handler="Acknowledge" class="inline">
+                                <input type="hidden" name="alertId" value="@a.Id" />
+                                <button class="btn small" type="submit">Acknowledge</button>
+                            </form>
+                        }
+                        else { <span class="muted small">ack'd by @a.AcknowledgedBy</span> }
+                    </td>
+                </tr>
+            }
+        </table>
+    }
+</div>
+
+<div class="grid-2" style="grid-template-columns: 3fr minmax(260px, 1fr)">
+    <div class="panel">
+        <h2>Recently resolved</h2>
+        @if (Model.Recent.Count == 0) { <p class="muted">None yet.</p> }
+        else
+        {
+            <table class="data">
+                <tr><th>Worst</th><th>Machine</th><th>Problem</th><th>Opened</th><th>Lasted</th></tr>
+                @foreach (var a in Model.Recent)
+                {
+                    <tr>
+                        <td><span class="chip @a.PeakLevel.ToString().ToLowerInvariant()">@a.PeakLevel</span></td>
+                        <td><a href="/machines/@a.MachineId">@Model.NameOf(a.MachineId)</a></td>
+                        <td>@a.Message</td>
+                        <td class="muted">@Format.Local(a.Opened)</td>
+                        <td class="muted">@Format.Duration(TimeSpan.FromSeconds((a.Closed ?? a.Opened) - a.Opened))</td>
+                    </tr>
+                }
+            </table>
+        }
+    </div>
+    <div class="panel">
+        <h2>Email</h2>
+        <dl class="facts">
+            <dt>Sending</dt><dd>@(Model.Settings.EmailEnabled ? "on" : "off")</dd>
+            <dt>To</dt><dd>@(Model.Settings.To.Length == 0 ? "nobody yet" : string.Join(", ", Model.Settings.To))</dd>
+            <dt>SMTP</dt><dd>@(string.IsNullOrWhiteSpace(Model.Settings.Smtp.Host) ? "not set (log only)" : $"{Model.Settings.Smtp.Host}:{Model.Settings.Smtp.Port}")</dd>
+            <dt>Reminders</dt><dd>@(Model.Settings.RemindEveryMinutes > 0 ? $"every {Format.Duration(TimeSpan.FromMinutes(Model.Settings.RemindEveryMinutes))}" : "off")</dd>
+            <dt>Resolved emails</dt><dd>@(Model.Settings.SendRecovery ? "on" : "off")</dd>
+        </dl>
+        <p class="muted small">Change these in <code>appsettings.json</code> under <code>Dashboard:Alerts</code>, then restart the service.</p>
+        <form method="post" asp-page-handler="TestEmail"><button class="btn" type="submit">Send a test email</button></form>
+    </div>
+</div>

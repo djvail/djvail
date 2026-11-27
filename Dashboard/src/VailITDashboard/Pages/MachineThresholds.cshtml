@@ -1,0 +1,51 @@
+@page "/machines/{id}/thresholds"
+@model MachineThresholdsModel
+@{
+    var m = Model.Machine;
+    ViewData["Title"] = $"{m.Name} thresholds";
+}
+<div class="page-head">
+    <div>
+        <div class="muted small"><a href="/machines/@m.MachineId">@m.Name</a> /</div>
+        <h1>Thresholds for @m.Name</h1>
+        <div class="muted">Group <a href="/thresholds?scope=group&value=@Uri.EscapeDataString(m.GroupName)">@m.GroupName</a>. Settings here beat the group's and the global ones.</div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>This machine's own thresholds</h2>
+    <partial name="_ThresholdEditor" model="Model.Editor" />
+</div>
+
+<div class="panel">
+    <h2>What applies now</h2>
+    <table class="data">
+        <tr><th>Reading</th><th class="num">Now</th><th>Warning</th><th>Critical</th><th>From</th><th></th></tr>
+        @foreach (var e in Model.Rows)
+        {
+            var unit = MetricCatalog.Unit(e.Reading.Metric);
+            var t = e.Threshold;
+            var arrow = t?.Direction == ThresholdDirection.Below ? "≤ " : "≥ ";
+            <tr>
+                <td>@MetricCatalog.Label(e.Reading.Key)</td>
+                <td class="num">@Format.Value(e.Reading.Value, unit)</td>
+                @if (t is null)
+                {
+                    <td class="muted" colspan="3">not checked</td>
+                }
+                else if (!t.Enabled)
+                {
+                    <td class="muted" colspan="2">switched off</td>
+                    <td class="muted">@t.Scope.ToString().ToLowerInvariant()</td>
+                }
+                else
+                {
+                    <td>@(t.Warning is double w ? arrow + Format.Value(w, unit) : "-")</td>
+                    <td>@(t.Critical is double c ? arrow + Format.Value(c, unit) : "-")</td>
+                    <td class="muted">@t.Scope.ToString().ToLowerInvariant()@(t.Instance == "*" ? "" : $" ({t.Instance})")</td>
+                }
+                <td>@if (e.Level != AlertLevel.Ok) { <span class="chip @e.Level.ToString().ToLowerInvariant()">@e.Level</span> }</td>
+            </tr>
+        }
+    </table>
+</div>

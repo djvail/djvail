@@ -1,0 +1,86 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Overview";
+    ViewData["Refresh"] = 60;
+}
+<div class="page-head">
+    <div>
+        <h1>Overview</h1>
+        <div class="muted">@Model.All.Count machines in @Model.All.Select(s => s.Machine.GroupName).Distinct(StringComparer.OrdinalIgnoreCase).Count() groups · refreshes every minute</div>
+    </div>
+    <div class="tabs">
+        <a href="/" class="@(Model.Show is null && Model.Group is null ? "active" : "")">All</a>
+        <a href="/?show=problems" class="@(Model.Show == "problems" ? "active" : "")">Only problems</a>
+    </div>
+</div>
+
+<div class="tiles">
+    <a class="tile" href="/"><div class="n">@Model.All.Count</div><div class="l">Machines</div></a>
+    <a class="tile ok" href="/?show=ok"><div class="n">@Model.Count(MachineHealth.Ok)</div><div class="l">Healthy</div></a>
+    <a class="tile warning" href="/?show=warning"><div class="n">@Model.Count(MachineHealth.Warning)</div><div class="l">Warning</div></a>
+    <a class="tile critical" href="/?show=critical"><div class="n">@Model.Count(MachineHealth.Critical)</div><div class="l">Critical</div></a>
+    <a class="tile stale" href="/?show=stale"><div class="n">@Model.Count(MachineHealth.Stale)</div><div class="l">Late</div></a>
+    <a class="tile offline" href="/?show=offline"><div class="n">@Model.Count(MachineHealth.Offline)</div><div class="l">Offline</div></a>
+</div>
+
+@if (Model.All.Count == 0)
+{
+    <div class="panel empty">
+        <h2>No monitors have reported yet</h2>
+        <p>Create an API key on <a asp-page="/Monitors">Monitors &amp; keys</a>, then point a VailITMonitor at this dashboard.<br />
+           Want to look around first? Start the dashboard with <code>--Dashboard:SeedDemoData=true</code>.</p>
+    </div>
+}
+else if (Model.Groups.Count == 0)
+{
+    <div class="panel empty">Nothing matches this filter. <a href="/">Show everything</a></div>
+}
+
+@foreach (var g in Model.Groups)
+{
+    var worst = g.Min(s => StatusService.Severity(s.Health));
+    <section class="group">
+        <div class="group-head">
+            <h2><a href="/?group=@Uri.EscapeDataString(g.Key)">@g.Key</a></h2>
+            <span class="muted">@g.Count() @(g.Count() == 1 ? "machine" : "machines")</span>
+            <a class="small" asp-page="/Thresholds" asp-route-scope="group" asp-route-value="@g.Key">group thresholds</a>
+        </div>
+        <div class="cards">
+            @foreach (var s in g)
+            {
+                var css = StatusService.CssClass(s.Health);
+                <a class="card @css" href="/machines/@s.Machine.MachineId">
+                    <div class="card-title">
+                        <span>@s.Machine.Name</span>
+                        <span>
+                            @if (s.Muted) { <span class="chip muted" title="Emails are muted">muted</span> }
+                            <span class="chip @css">@(s.Health == MachineHealth.Stale ? "late" : s.Health.ToString())</span>
+                        </span>
+                    </div>
+                    <div class="meter"><span>CPU</span><span class="bar"><span class="@StatusService.CssClass(s.CpuLevel)" style="width:@(Math.Clamp(s.Cpu ?? 0, 0, 100).ToString("0"))%"></span></span><span class="v">@(s.Cpu is double c ? Format.Value(c, "%") : "-")</span></div>
+                    <div class="meter"><span>Memory</span><span class="bar"><span class="@StatusService.CssClass(s.MemoryLevel)" style="width:@(Math.Clamp(s.Memory ?? 0, 0, 100).ToString("0"))%"></span></span><span class="v">@(s.Memory is double m ? Format.Value(m, "%") : "-")</span></div>
+                    @if (s.FullestDrive is var (drive, free))
+                    {
+                        var used = 100 - free;
+                        <div class="meter"><span>Disk @drive</span><span class="bar"><span class="@StatusService.CssClass(s.DiskLevel)" style="width:@(Math.Clamp(used, 0, 100).ToString("0"))%"></span></span><span class="v">@Format.Value(free, "%") free</span></div>
+                    }
+                    <div class="problem">
+                        @if (s.Health is MachineHealth.Offline or MachineHealth.Stale)
+                        {
+                            <text>Last report @Format.Ago(s.Machine.LastSeen)</text>
+                        }
+                        else if (s.TopProblem is not null)
+                        {
+                            @s.TopProblem @(s.OpenAlerts > 1 ? $" (+{s.OpenAlerts - 1})" : "")
+                        }
+                        else
+                        {
+                            <text>Reported @Format.Ago(s.Machine.LastSeen)</text>
+                        }
+                    </div>
+                </a>
+            }
+        </div>
+    </section>
+}

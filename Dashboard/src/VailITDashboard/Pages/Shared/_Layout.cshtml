@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] · VailIT Dashboard</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body data-refresh="@(ViewData["Refresh"] ?? 0)">
+    <header class="topbar">
+        <a class="brand" asp-page="/Index"><span class="logo">V</span> VailIT Dashboard</a>
+        <nav>
+            <a asp-page="/Index" class="@Active("/Index")">Overview</a>
+            <a asp-page="/Alerts" class="@Active("/Alerts")">Alerts</a>
+            <a asp-page="/Thresholds" class="@Active("/Thresholds")">Thresholds</a>
+            <a asp-page="/Monitors" class="@Active("/Monitors")">Monitors &amp; keys</a>
+        </nav>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            <form method="post" asp-page="/Login" asp-page-handler="Logout" class="signout">
+                <span class="muted">@User.Identity.Name</span>
+                <button class="btn link" type="submit">Sign out</button>
+            </form>
+        }
+    </header>
+    <main class="page">
+        @if (TempData["Message"] is string message)
+        {
+            <div class="flash">@message</div>
+        }
+        @RenderBody()
+    </main>
+    <footer class="footer muted">VailIT Dashboard · times shown in the server's time zone</footer>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
+@functions {
+    string Active(string page) =>
+        string.Equals(ViewContext.RouteData.Values["page"] as string, page, StringComparison.OrdinalIgnoreCase)
+        || (page == "/Index" && (ViewContext.RouteData.Values["page"] as string ?? "").StartsWith("/Machine")) ? "active" : "";
+}
