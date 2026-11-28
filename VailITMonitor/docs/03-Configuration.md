@@ -88,6 +88,20 @@ Rules of thumb:
 | `Reports.Quarterly.Enabled` / `.KeepDays` | `true` / `0` | |
 | `Reports.Yearly.Enabled` / `.KeepDays` | `true` / `0` | |
 
+## Reporting to the dashboard
+
+Off by default. `VailITMonitor.exe connect <url> <apiKey> [serverType]` turns it on and saves these
+settings to `reporting.json` / `reporting.config` next to the program, which override the main file and
+survive upgrades. Every setting and how the reporter behaves: [06 Reporting to the dashboard](06-Dashboard-Reporting.md#settings).
+
+| .NET 10 (`Monitor:Reporting:...`) | .NET Framework (`Reporting.`...) | Default | Meaning |
+|---|---|---|---|
+| `Enabled` | `Reporting.Enabled` | `false` | Send readings to VailIT Dashboard |
+| `DashboardUrl` | `Reporting.DashboardUrl` | | e.g. `https://dashboard:5443` |
+| `ApiKeyProtected` | `Reporting.ApiKeyProtected` | | The key, encrypted for this machine by `connect` |
+| `ServerType` / `Tags` | `Reporting.ServerType` / `.Tags` | | Hints for the dashboard's grouping |
+| `IntervalSeconds` | `Reporting.IntervalSeconds` | `60` | How often to report |
+
 ## Logging
 
 | .NET 10 (`appsettings.json`, outside `Monitor`) | .NET Framework | Meaning |

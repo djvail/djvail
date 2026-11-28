@@ -50,6 +50,19 @@ namespace VailITMonitor.Storage
     /// Microsoft.Data.Sqlite also runs on .NET Framework. The classic alternative,
     /// System.Data.SQLite, works almost the same way (SQLiteConnection instead of SqliteConnection).
     /// </summary>
+    /// <summary>All readings taken at one sample time (used by the dashboard reporter).</summary>
+    public sealed class SampleBatch
+    {
+        public SampleBatch(long ts)
+        {
+            Ts = ts;
+            Readings = new List<Reading>(40);
+        }
+
+        public long Ts { get; }
+        public List<Reading> Readings { get; }
+    }
+
     public sealed class MetricStore
     {
         private const int SchemaVersion = 1;
@@ -232,6 +245,48 @@ namespace VailITMonitor.Storage
             return result;
         }
 
+        /// <summary>
+        /// The readings of up to maxTimestamps sample times after afterExclusive, oldest first.
+        /// Used by the dashboard reporter: the samples table doubles as its outbox.
+        /// </summary>
+        public List<SampleBatch> GetSampleBatchesAfter(long afterExclusive, int maxTimestamps)
+        {
+            var result = new List<SampleBatch>();
+            using (var db = Open())
+            {
+                long last;
+                using (var cmd = db.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT MAX(ts) FROM (SELECT DISTINCT ts FROM samples WHERE ts > $a ORDER BY ts LIMIT $n)";
+                    cmd.Parameters.AddWithValue("$a", afterExclusive);
+                    cmd.Parameters.AddWithValue("$n", Math.Max(1, maxTimestamps));
+                    var value = cmd.ExecuteScalar();
+                    if (!(value is long)) return result;
+                    last = (long)value;
+                }
+
+                using (var cmd = db.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT ts, metric_id, value FROM samples WHERE ts > $a AND ts <= $b ORDER BY ts";
+                    cmd.Parameters.AddWithValue("$a", afterExclusive);
+                    cmd.Parameters.AddWithValue("$b", last);
+                    using (var r = cmd.ExecuteReader())
+                    {
+                        while (r.Read())
+                        {
+                            MetricKey key;
+                            if (!_keys.TryGetValue(r.GetInt64(1), out key)) continue;
+                            long ts = r.GetInt64(0);
+                            if (result.Count == 0 || result[result.Count - 1].Ts != ts) result.Add(new SampleBatch(ts));
+                            result[result.Count - 1].Readings.Add(new Reading(key.Metric, key.Instance, r.GetDouble(2)));
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
         public long? GetEarliestSampleTime()
         {
             using (var db = Open())
@@ -384,6 +439,30 @@ namespace VailITMonitor.Storage
                 cmd.CommandText = "INSERT OR REPLACE INTO task_state (name, last_run) VALUES ($n, $t)";
                 cmd.Parameters.AddWithValue("$n", task);
                 cmd.Parameters.AddWithValue("$t", when.ToString("s", CultureInfo.InvariantCulture));
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        /// <summary>A small named value kept in task_state, e.g. the reporter's "last sent" mark.</summary>
+        public string GetState(string name)
+        {
+            using (var db = Open())
+            using (var cmd = db.CreateCommand())
+            {
+                cmd.CommandText = "SELECT last_run FROM task_state WHERE name = $n";
+                cmd.Parameters.AddWithValue("$n", name);
+                return cmd.ExecuteScalar() as string;
+            }
+        }
+
+        public void SetState(string name, string value)
+        {
+            using (var db = Open())
+            using (var cmd = db.CreateCommand())
+            {
+                cmd.CommandText = "INSERT OR REPLACE INTO task_state (name, last_run) VALUES ($n, $v)";
+                cmd.Parameters.AddWithValue("$n", name);
+                cmd.Parameters.AddWithValue("$v", value);
                 cmd.ExecuteNonQuery();
             }
         }

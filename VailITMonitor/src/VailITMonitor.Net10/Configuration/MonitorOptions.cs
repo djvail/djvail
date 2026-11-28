@@ -16,6 +16,7 @@ public sealed class MonitorOptions
     public MetricOptions Metrics { get; set; } = new();
     public RetentionOptions Retention { get; set; } = new();
     public ReportOptions Reports { get; set; } = new();
+    public ReportingOptions Reporting { get; set; } = new();
 
     // ----- Derived values (not read from the file) -----
 
@@ -110,4 +111,35 @@ public sealed class ReportOptions
         PeriodType.Year => Yearly,
         _ => throw new ArgumentOutOfRangeException(nameof(period)),
     };
+}
+
+/// <summary>
+/// Sending readings to VailITDashboard (see docs/06-Dashboard-Reporting.md).
+/// Off by default. "VailITMonitor.exe connect" fills these in and saves them to reporting.json.
+/// </summary>
+public sealed class ReportingOptions
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>e.g. "https://dashboard.vailit.local:5443". The /api/v1/... paths are added automatically.</summary>
+    public string DashboardUrl { get; set; } = "";
+
+    /// <summary>The machine's API key, encrypted with Windows DPAPI ("dpapi:..."). A plain "vmk_..." key also works.</summary>
+    public string ApiKeyProtected { get; set; } = "";
+
+    /// <summary>Empty = generated once and kept in &lt;DataFolder&gt;\machine-id.txt.</summary>
+    public string MachineId { get; set; } = "";
+
+    /// <summary>Hint for the dashboard's first grouping, e.g. "SQL", "Web", "File".</summary>
+    public string ServerType { get; set; } = "";
+    public string[] Tags { get; set; } = [];
+
+    public int IntervalSeconds { get; set; } = 60;
+    public int TimeoutSeconds { get; set; } = 15;
+
+    /// <summary>For a self-signed dashboard certificate: its thumbprint. Empty = normal certificate checks.</summary>
+    public string PinnedCertificateThumbprint { get; set; } = "";
+
+    /// <summary>How much existing history a newly connected monitor sends (minutes).</summary>
+    public int InitialBacklogMinutes { get; set; } = 60;
 }

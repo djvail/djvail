@@ -22,6 +22,18 @@
 .PARAMETER InstallPath
     Where to install. Default: C:\Program Files\VailITMonitor (Net10) or C:\Program Files\VailITMonitor-Net48.
 
+.PARAMETER DashboardUrl
+    Optional. The VailIT Dashboard address, e.g. https://dashboard.vailit.local:5443. With -ApiKey,
+    turns on reporting to the dashboard ("VailITMonitor.exe connect"). Leave out to keep the current
+    dashboard settings (they survive upgrades).
+
+.PARAMETER ApiKey
+    The key created for this server in the dashboard (Monitors & keys -> Create key). It is stored
+    encrypted for this machine (Windows DPAPI), never as plain text.
+
+.PARAMETER ServerType
+    Optional group hint for the dashboard, e.g. SQL, Web, File.
+
 .PARAMETER ServiceName
     Default "VailITMonitor". Use a different name (e.g. VailITMonitor48) to run both editions
     side by side for comparison - each edition keeps its data in its own folder by default.
@@ -30,6 +42,8 @@
     .\Install-VailITMonitor.ps1 -Edition Net10
 .EXAMPLE
     .\Install-VailITMonitor.ps1 -Edition Net48 -ServiceName VailITMonitor48
+.EXAMPLE
+    .\Install-VailITMonitor.ps1 -Edition Net10 -DashboardUrl https://dashboard:5443 -ApiKey vmk_... -ServerType SQL
 #>
 [CmdletBinding()]
 param(
@@ -40,7 +54,10 @@ param(
     [string]$InstallPath,
     [string]$ServiceName = 'VailITMonitor',
     [switch]$OverwriteConfig,
-    [switch]$NoStart
+    [switch]$NoStart,
+    [string]$DashboardUrl,
+    [string]$ApiKey,
+    [string]$ServerType = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,6 +77,9 @@ if (-not (Test-Path $exe)) {
 }
 
 $configName = if ($Edition -eq 'Net10') { 'appsettings.json' } else { 'VailITMonitor.exe.config' }
+if (($DashboardUrl -and -not $ApiKey) -or ($ApiKey -and -not $DashboardUrl)) {
+    throw "-DashboardUrl and -ApiKey go together: pass both to connect this server to the dashboard."
+}
 
 # --- 1. Stop an existing installation ----------------------------------------------------------
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -89,6 +109,17 @@ if (-not [System.Diagnostics.EventLog]::SourceExists('VailITMonitor')) {
     Write-Host "Registered Event Log source 'VailITMonitor' (Application log)."
 }
 
+# --- 3b. Dashboard reporting (optional) ------------------------------------------------------
+# "connect" writes reporting.json / reporting.config next to the program, with the key encrypted.
+# Those files are not part of the build output, so later upgrades keep them.
+if ($DashboardUrl) {
+    $installedExe = Join-Path $InstallPath 'VailITMonitor.exe'
+    $connectArgs = @('connect', $DashboardUrl, $ApiKey)
+    if ($ServerType) { $connectArgs += $ServerType }
+    & $installedExe @connectArgs
+    if ($LASTEXITCODE -ne 0) { throw "Could not save the dashboard settings (VailITMonitor.exe connect failed)." }
+}
+
 # --- 4. Create / update the service ------------------------------------------------------------
 $binPath = '"' + (Join-Path $InstallPath 'VailITMonitor.exe') + '"'
 $displayName = if ($ServiceName -eq 'VailITMonitor') { 'VailIT Monitor' } else { "VailIT Monitor ($ServiceName)" }
@@ -116,3 +147,4 @@ Get-Service -Name $ServiceName | Format-Table Name, Status, StartType, DisplayNa
 Write-Host "Installed $Edition edition as '$ServiceName' in $InstallPath" -ForegroundColor Green
 Write-Host "Settings: $(Join-Path $InstallPath $configName)   (restart the service after editing)"
 Write-Host "Check it:  & '$(Join-Path $InstallPath 'VailITMonitor.exe')' sample"
+if ($DashboardUrl) { Write-Host "Check the dashboard link:  & '$(Join-Path $InstallPath 'VailITMonitor.exe')' report-test" }

@@ -10,6 +10,9 @@
 //   VailITMonitor.exe cleanup             run every cleanup now, ignoring CleanupEveryDays
 //   VailITMonitor.exe report daily [date] create a report now (daily|weekly|monthly|quarterly|yearly)
 //   VailITMonitor.exe demo [folder]       create a demo database full of fake data, and sample reports
+//   VailITMonitor.exe connect <url> <apiKey> [serverType]
+//                                         turn on reporting to VailITDashboard (saved in reporting.json)
+//   VailITMonitor.exe report-test         take one reading, send it to the dashboard, print the reply
 //
 // Installing/removing the service: see scripts\Install-VailITMonitor.ps1 and docs\02-Build-Install.md.
 
@@ -23,6 +26,7 @@ using VailITMonitor.Tools;
 using VailITMonitor.Workers;
 
 const string ServiceName = "VailITMonitor";
+const string ReportingFile = "reporting.json";
 
 // "--Section:Key=value" arguments are settings overrides; everything else is the command and its arguments.
 string[] positional = args.Where(a => !a.StartsWith("--")).ToArray();
@@ -37,6 +41,11 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
     Args = args.Where(a => a.StartsWith("--")).ToArray(),   // allow overrides like --Monitor:SampleIntervalSeconds=10
 });
 
+// reporting.json (written by the "connect" command) sits beside appsettings.json and overrides it,
+// so upgrades that replace appsettings.json never lose the dashboard settings.
+builder.Configuration.AddJsonFile(Path.Combine(AppContext.BaseDirectory, ReportingFile), optional: true, reloadOnChange: false);
+if (args.Length > 0) builder.Configuration.AddCommandLine(args.Where(a => a.StartsWith("--")).ToArray());   // keep --overrides on top
+
 builder.Services.AddWindowsService(o => o.ServiceName = ServiceName);   // no-op when not running as a service
 if (OperatingSystem.IsWindows())
     builder.Services.Configure<EventLogSettings>(s => s.SourceName = ServiceName);
@@ -50,11 +59,18 @@ builder.Services.AddSingleton<RollupService>();
 builder.Services.AddSingleton<CleanupService>();
 builder.Services.AddSingleton<ReportGenerator>();
 builder.Services.AddSingleton<MaintenanceService>();
+builder.Services.AddSingleton<MachineInfo>();
+builder.Services.AddSingleton<DashboardClient>();
+builder.Services.AddSingleton<DashboardReporter>();
+
+var reportingOptions = builder.Configuration.GetSection(MonitorOptions.SectionName).Get<MonitorOptions>()?.Reporting ?? new ReportingOptions();
+bool reportingUsable = reportingOptions.Enabled && Uri.TryCreate(reportingOptions.DashboardUrl, UriKind.Absolute, out _);
 
 if (command is "run" or "console")
 {
     builder.Services.AddHostedService<SamplingWorker>();
     builder.Services.AddHostedService<MaintenanceWorker>();
+    if (reportingUsable) builder.Services.AddHostedService<ReportingWorker>();
 }
 
 using var host = builder.Build();
@@ -68,6 +84,9 @@ switch (command)
     case "console":
         if (command == "console" || Environment.UserInteractive)
             Console.WriteLine($"VailITMonitor running in the console. Data: {options.ResolvedDataFolder}. Press Ctrl+C to stop.");
+        if (reportingOptions.Enabled && !reportingUsable)
+            host.Services.GetRequiredService<ILogger<MonitorOptions>>().LogWarning(
+                "Reporting is enabled but Reporting:DashboardUrl '{Url}' is not a valid URL; not reporting to the dashboard.", reportingOptions.DashboardUrl);
         await host.RunAsync();
         return 0;
 
@@ -112,11 +131,17 @@ switch (command)
         return file is null ? 1 : 0;
     }
 
+    case "connect":
+        return Connect(rest, options);
+
+    case "report-test":
+        return await ReportTest(services, options);
+
     case "demo":
         return RunDemo(rest.Length > 0 ? rest[0] : Path.Combine(options.ResolvedDataFolder, "Demo"), options);
 
     default:
-        Console.WriteLine("Commands: (none) | console | sample | maintenance | cleanup | report <type> [date] | demo [folder]");
+        Console.WriteLine("Commands: (none) | console | sample | maintenance | cleanup | report <type> [date] | demo [folder] | connect <url> <apiKey> [serverType] | report-test");
         return command is "help" or "-h" or "--help" or "/?" ? 0 : 2;
 }
 
@@ -153,5 +178,86 @@ static int RunDemo(string folder, MonitorOptions real)
     }
 
     Console.WriteLine("Done. Open the PDFs above to see what the real reports will look like.");
+    return 0;
+}
+
+// --- Dashboard: "connect" saves the settings, "report-test" proves they work ----------------
+static int Connect(string[] rest, MonitorOptions options)
+{
+    if (rest.Length < 2 || !Uri.TryCreate(rest[0], UriKind.Absolute, out var url) || (url.Scheme != "https" && url.Scheme != "http"))
+    {
+        Console.Error.WriteLine("Usage: VailITMonitor connect <https://dashboard-url> <apiKey> [serverType]");
+        return 2;
+    }
+
+    var reporting = options.Reporting;
+    var settings = new Dictionary<string, object>
+    {
+        ["Enabled"] = true,
+        ["DashboardUrl"] = url.ToString().TrimEnd('/'),
+        ["ApiKeyProtected"] = ApiKeyProtector.Protect(rest[1]),
+        ["MachineId"] = reporting.MachineId ?? "",
+        ["ServerType"] = rest.Length > 2 ? rest[2] : reporting.ServerType ?? "",
+        ["Tags"] = reporting.Tags ?? [],
+        ["IntervalSeconds"] = reporting.IntervalSeconds,
+        ["TimeoutSeconds"] = reporting.TimeoutSeconds,
+        ["PinnedCertificateThumbprint"] = reporting.PinnedCertificateThumbprint ?? "",
+        ["InitialBacklogMinutes"] = reporting.InitialBacklogMinutes,
+    };
+    var file = Path.Combine(AppContext.BaseDirectory, ReportingFile);
+    var json = System.Text.Json.JsonSerializer.Serialize(
+        new { Monitor = new { Reporting = settings } },
+        new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+    File.WriteAllText(file, json);
+
+    Console.WriteLine($"Saved dashboard settings to {file} (the API key is encrypted for this machine).");
+    if (url.Scheme == "http") Console.WriteLine("Warning: plain http sends the API key unencrypted. Use https outside a lab.");
+    Console.WriteLine("Restart the service to start reporting:  Restart-Service VailITMonitor");
+    return 0;
+}
+
+static async Task<int> ReportTest(IServiceProvider services, MonitorOptions options)
+{
+    if (!Uri.TryCreate(options.Reporting.DashboardUrl, UriKind.Absolute, out _))
+    {
+        Console.Error.WriteLine("No dashboard configured. Run: VailITMonitor connect <url> <apiKey> [serverType]");
+        return 2;
+    }
+
+    var client = services.GetRequiredService<DashboardClient>();
+    var machine = services.GetRequiredService<MachineInfo>();
+    Console.WriteLine($"Dashboard: {client.BaseUri}   machine id: {machine.MachineId}");
+
+    var (me, info) = await client.GetMeAsync(CancellationToken.None);
+    Console.WriteLine(info is not null
+        ? $"  Key accepted. Dashboard name \"{info.DisplayName}\", group \"{info.Group}\"."
+        : $"  monitors/me: {me.Outcome} (HTTP {me.StatusCode}) {me.Message}");
+
+    var collector = services.GetRequiredService<MetricCollector>();
+    collector.Prime();
+    await Task.Delay(2000);
+    var readings = collector.Collect();
+    var now = DateTime.UtcNow;
+    var report = new VailIT.Reporting.Contracts.MonitorReport
+    {
+        SentAtUtc = now,
+        Monitor = machine.Build(),
+        Samples =
+        [
+            new VailIT.Reporting.Contracts.SampleDto
+            {
+                TimestampUtc = new DateTime(now.Ticks - now.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc),
+                Readings = readings.Select(r => new VailIT.Reporting.Contracts.ReadingDto { Metric = r.Metric, Instance = r.Instance, Value = r.Value }).ToList(),
+            },
+        ],
+    };
+
+    var (result, ack) = await client.SendReportAsync(report, CancellationToken.None);
+    if (ack is null)
+    {
+        Console.WriteLine($"  Report failed: {result.Outcome} (HTTP {result.StatusCode}) {result.Message}");
+        return 1;
+    }
+    Console.WriteLine($"  Report accepted: {readings.Count} readings, dashboard time {ack.ServerTimeUtc:u}, interval {ack.ReportIntervalSeconds}s.");
     return 0;
 }

@@ -50,6 +50,8 @@ If you downloaded the ready-built package, skip step 1: the `publish` folder is 
   schedule, so the long-term history is touched rarely.
 * **PDF reports** for each day, week, month, quarter and year, with charts and a summary table.
   They are saved to `<DataFolder>\Reports\Daily`, `...\Weekly` and so on.
+* **Optional reporting to VailIT Dashboard** every minute, with no readings lost during an outage.
+  Off until you run `VailITMonitor.exe connect <url> <key>`. See [06](docs/06-Dashboard-Reporting.md).
 * **A small footprint.** The service wakes once a minute for a few milliseconds. The service
   records its own memory and CPU use, and the reports show them.
 
@@ -62,6 +64,7 @@ If you downloaded the ready-built package, skip step 1: the `publish` folder is 
 | [03 Configuration](docs/03-Configuration.md) | Every setting, in both file formats |
 | [04 Editing the code](docs/04-Editing-The-Code.md) | A tour of the source, and how to make common changes (add a metric, change a chart, ...) |
 | [05 .NET Framework vs modern .NET](docs/05-Framework-vs-Modern-NET.md) | A guided side-by-side comparison of the two editions, for Framework developers learning modern .NET |
+| [06 Reporting to the dashboard](docs/06-Dashboard-Reporting.md) | Connecting a monitor to VailIT Dashboard, what is sent, retries and outages, security |
 
 ## Folder layout
 

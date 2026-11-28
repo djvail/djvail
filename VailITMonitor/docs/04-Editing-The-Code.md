@@ -22,6 +22,8 @@ in each. If you only use one edition, you only need to change that one.
 | Charts | `Reporting/ChartRenderer.cs` | same | ScottPlot line charts → PNG |
 | PDF layout | `Reporting/ReportGenerator.cs` | same | Chooses the data and charts, and lays out the PDF with QuestPDF |
 | Demo data | `Tools/DemoData.cs` | same | Fake readings for the `demo` command |
+| Dashboard reporting | `Dashboard/*.cs` + `Workers/ReportingWorker.cs` | `Dashboard/*.cs` + the reporting timer in `MonitorService.cs` | Sends readings to VailIT Dashboard ([06](06-Dashboard-Reporting.md#where-the-code-is)) |
+| Report shapes | `Shared/VailIT.Reporting.Contracts` (repository root) | same project | The JSON the dashboard receives; shared with the dashboard |
 | Logging | (built in: `ILogger<T>`) | `Log.cs` | Event Log + console |
 
 ## 4.2 The edit → build → test loop
@@ -105,6 +107,10 @@ fonts, grid and legend. Every chart in every report goes through it.
 * Docs: <https://www.questpdf.com/api-reference/>. QuestPDF Companion can preview layouts live.
 
 ### Add a threshold warning (e.g. disk nearly full)
+If the server reports to VailIT Dashboard, set thresholds there instead: they apply to every
+server, per group or per machine, and the dashboard sends the emails. The approach below is for a
+monitor that runs on its own.
+
 In the sampling step (`SamplingWorker.TakeReading` / `MonitorService.OnSamplingTick`), after
 `Collect()`:
 

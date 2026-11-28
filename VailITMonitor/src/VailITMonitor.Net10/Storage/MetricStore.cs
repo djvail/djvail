@@ -182,6 +182,41 @@ public sealed class MetricStore
         return result;
     }
 
+    /// <summary>
+    /// The readings of up to <paramref name="maxTimestamps"/> sample times after <paramref name="afterExclusive"/>,
+    /// oldest first. Used by the dashboard reporter: the samples table doubles as its outbox.
+    /// </summary>
+    public List<(long Ts, List<Reading> Readings)> GetSampleBatchesAfter(long afterExclusive, int maxTimestamps)
+    {
+        var result = new List<(long Ts, List<Reading> Readings)>();
+        using var db = Open();
+
+        long last;
+        using (var cmd = db.CreateCommand())
+        {
+            cmd.CommandText = "SELECT MAX(ts) FROM (SELECT DISTINCT ts FROM samples WHERE ts > $a ORDER BY ts LIMIT $n)";
+            cmd.Parameters.AddWithValue("$a", afterExclusive);
+            cmd.Parameters.AddWithValue("$n", Math.Max(1, maxTimestamps));
+            if (cmd.ExecuteScalar() is not long max) return result;
+            last = max;
+        }
+
+        using var read = db.CreateCommand();
+        read.CommandText = "SELECT ts, metric_id, value FROM samples WHERE ts > $a AND ts <= $b ORDER BY ts";
+        read.Parameters.AddWithValue("$a", afterExclusive);
+        read.Parameters.AddWithValue("$b", last);
+        using var r = read.ExecuteReader();
+        while (r.Read())
+        {
+            if (!_keys.TryGetValue(r.GetInt64(1), out var key)) continue;
+            long ts = r.GetInt64(0);
+            if (result.Count == 0 || result[^1].Ts != ts) result.Add((ts, new List<Reading>(40)));
+            result[^1].Readings.Add(new Reading(key.Metric, key.Instance, r.GetDouble(2)));
+        }
+
+        return result;
+    }
+
     public long? GetEarliestSampleTime()
     {
         using var db = Open();
@@ -306,6 +341,26 @@ public sealed class MetricStore
         cmd.CommandText = "INSERT OR REPLACE INTO task_state (name, last_run) VALUES ($n, $t)";
         cmd.Parameters.AddWithValue("$n", task);
         cmd.Parameters.AddWithValue("$t", when.ToString("s", CultureInfo.InvariantCulture));
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>A small named value kept in task_state, e.g. the reporter's "last sent" mark.</summary>
+    public string? GetState(string name)
+    {
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT last_run FROM task_state WHERE name = $n";
+        cmd.Parameters.AddWithValue("$n", name);
+        return cmd.ExecuteScalar() as string;
+    }
+
+    public void SetState(string name, string value)
+    {
+        using var db = Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "INSERT OR REPLACE INTO task_state (name, last_run) VALUES ($n, $v)";
+        cmd.Parameters.AddWithValue("$n", name);
+        cmd.Parameters.AddWithValue("$v", value);
         cmd.ExecuteNonQuery();
     }
 
