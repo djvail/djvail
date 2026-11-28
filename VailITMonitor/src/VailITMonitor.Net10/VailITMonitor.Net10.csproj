@@ -12,7 +12,7 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>VailITMonitor</AssemblyName>
     <RootNamespace>VailITMonitor</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Product>VailITMonitor</Product>
 
     <!-- Modern C# conveniences: nullable reference type checks and implicit 'using System;' etc. -->
@@ -43,10 +43,19 @@
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.15" />
     <PackageReference Include="QuestPDF" Version="2026.9.2" />
     <PackageReference Include="ScottPlot" Version="5.1.59" />
+    <!-- Windows DPAPI, used to keep the dashboard API key encrypted in reporting.json. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The report shapes shared with VailITDashboard (netstandard2.0, also used by the 4.8 edition). -->
+    <ProjectReference Include="..\..\..\Shared\VailIT.Reporting.Contracts\VailIT.Reporting.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <!-- reporting.json is written on the server by "VailITMonitor.exe connect"; it is never shipped. -->
+    <None Remove="reporting.json" />
   </ItemGroup>
 
 </Project>

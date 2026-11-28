@@ -27,6 +27,7 @@ namespace VailITMonitor.Configuration
         public MetricSettings Metrics { get; set; }
         public RetentionSettings Retention { get; set; }
         public ReportSettings Reports { get; set; }
+        public ReportingSettings Reporting { get; set; }
 
         // ----- Derived values -----
 
@@ -116,6 +117,20 @@ namespace VailITMonitor.Configuration
                     Quarterly = s.ReportType("Reports.Quarterly", 0),
                     Yearly = s.ReportType("Reports.Yearly", 0),
                 },
+
+                Reporting = new ReportingSettings
+                {
+                    Enabled = s.Bool("Reporting.Enabled", false),
+                    DashboardUrl = s.String("Reporting.DashboardUrl", ""),
+                    ApiKeyProtected = s.String("Reporting.ApiKeyProtected", ""),
+                    MachineId = s.String("Reporting.MachineId", ""),
+                    ServerType = s.String("Reporting.ServerType", ""),
+                    Tags = s.List("Reporting.Tags"),
+                    IntervalSeconds = s.Int("Reporting.IntervalSeconds", 60),
+                    TimeoutSeconds = s.Int("Reporting.TimeoutSeconds", 15),
+                    PinnedCertificateThumbprint = s.String("Reporting.PinnedCertificateThumbprint", ""),
+                    InitialBacklogMinutes = s.Int("Reporting.InitialBacklogMinutes", 60),
+                },
             };
         }
 
@@ -178,6 +193,35 @@ namespace VailITMonitor.Configuration
                     Enabled = Bool(prefix + ".Enabled", true),
                     KeepDays = Int(prefix + ".KeepDays", keepDays),
                 };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sending readings to VailITDashboard (see docs/06-Dashboard-Reporting.md). Off by default.
+    /// "VailITMonitor.exe connect" fills these in and saves them to reporting.config.
+    /// </summary>
+    public sealed class ReportingSettings
+    {
+        public bool Enabled { get; set; }
+        public string DashboardUrl { get; set; }
+        /// <summary>The API key encrypted with Windows DPAPI ("dpapi:..."). A plain "vmk_..." key also works.</summary>
+        public string ApiKeyProtected { get; set; }
+        /// <summary>Empty = generated once and kept in &lt;DataFolder&gt;\machine-id.txt.</summary>
+        public string MachineId { get; set; }
+        public string ServerType { get; set; }
+        public string[] Tags { get; set; }
+        public int IntervalSeconds { get; set; }
+        public int TimeoutSeconds { get; set; }
+        public string PinnedCertificateThumbprint { get; set; }
+        public int InitialBacklogMinutes { get; set; }
+
+        public bool HasValidUrl
+        {
+            get
+            {
+                Uri uri;
+                return Uri.TryCreate(DashboardUrl, UriKind.Absolute, out uri) && (uri.Scheme == "https" || uri.Scheme == "http");
             }
         }
     }

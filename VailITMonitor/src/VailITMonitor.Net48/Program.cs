@@ -6,6 +6,7 @@ using System.ServiceProcess;
 using System.Threading;
 using VailITMonitor.Collection;
 using VailITMonitor.Configuration;
+using VailITMonitor.Dashboard;
 using VailITMonitor.Processing;
 using VailITMonitor.Reporting;
 using VailITMonitor.Service;
@@ -24,6 +25,9 @@ namespace VailITMonitor
     ///   VailITMonitor.exe cleanup             run every cleanup now, ignoring CleanupEveryDays
     ///   VailITMonitor.exe report daily [date] create a report now (daily|weekly|monthly|quarterly|yearly)
     ///   VailITMonitor.exe demo [folder]       create a demo database full of fake data, and sample reports
+    ///   VailITMonitor.exe connect &lt;url&gt; &lt;apiKey&gt; [serverType]
+    ///                                         turn on reporting to VailITDashboard (saved in reporting.config)
+    ///   VailITMonitor.exe report-test         take one reading, send it to the dashboard, print the reply
     ///
     /// Any --Key=Value argument overrides the matching appSettings key, e.g. --SampleIntervalSeconds=10
     /// </summary>
@@ -55,7 +59,7 @@ namespace VailITMonitor
                 {
                     case "run":
                         if (Environment.UserInteractive) goto case "console";   // started by hand, not by Windows
-                        ServiceBase.Run(new MonitorService(settings, new MetricCollector(settings.Metrics), store, maintenance));
+                        ServiceBase.Run(new MonitorService(settings, new MetricCollector(settings.Metrics), store, maintenance, CreateReporter(settings, store)));
                         return 0;
 
                     case "console":
@@ -86,11 +90,17 @@ namespace VailITMonitor
                     case "report":
                         return RunReport(rest, settings, rollups, reports);
 
+                    case "connect":
+                        return Connect(rest, settings);
+
+                    case "report-test":
+                        return ReportTest(settings);
+
                     case "demo":
                         return RunDemo(rest.Length > 0 ? rest[0] : Path.Combine(settings.ResolvedDataFolder, "Demo"), settings);
 
                     default:
-                        Console.WriteLine("Commands: (none) | console | sample | maintenance | cleanup | report <type> [date] | demo [folder]");
+                        Console.WriteLine("Commands: (none) | console | sample | maintenance | cleanup | report <type> [date] | demo [folder] | connect <url> <apiKey> [serverType] | report-test");
                         return command == "help" || command == "/?" ? 0 : 2;
                 }
             }
@@ -104,7 +114,7 @@ namespace VailITMonitor
         private static int RunInConsole(MonitorSettings settings, MetricStore store, MaintenanceService maintenance)
         {
             Console.WriteLine("VailITMonitor running in the console. Data: " + settings.ResolvedDataFolder + ". Press Ctrl+C to stop.");
-            var service = new MonitorService(settings, new MetricCollector(settings.Metrics), store, maintenance);
+            var service = new MonitorService(settings, new MetricCollector(settings.Metrics), store, maintenance, CreateReporter(settings, store));
             var stop = new ManualResetEvent(false);
             Console.CancelKeyPress += (sender, e) =>
             {
@@ -116,6 +126,105 @@ namespace VailITMonitor
             stop.WaitOne();
             service.StopInConsole();
             return 0;
+        }
+
+        /// <summary>The dashboard reporter, or null when reporting is off or not set up correctly.</summary>
+        private static DashboardReporter CreateReporter(MonitorSettings settings, MetricStore store)
+        {
+            if (!settings.Reporting.Enabled) return null;
+            if (!settings.Reporting.HasValidUrl)
+            {
+                Log.Warn("Reporting is enabled but Reporting.DashboardUrl '" + settings.Reporting.DashboardUrl + "' is not a valid URL; not reporting to the dashboard.");
+                return null;
+            }
+            return new DashboardReporter(store, new DashboardClient(settings.Reporting), new MachineInfo(settings), settings);
+        }
+
+        /// <summary>Saves the dashboard settings to reporting.config, which App.config's appSettings includes.</summary>
+        private static int Connect(string[] rest, MonitorSettings settings)
+        {
+            Uri url;
+            if (rest.Length < 2 || !Uri.TryCreate(rest[0], UriKind.Absolute, out url) || (url.Scheme != "https" && url.Scheme != "http"))
+            {
+                Console.Error.WriteLine("Usage: VailITMonitor connect <https://dashboard-url> <apiKey> [serverType]");
+                return 2;
+            }
+
+            var r = settings.Reporting;
+            var values = new[]
+            {
+                new[] { "Reporting.Enabled", "true" },
+                new[] { "Reporting.DashboardUrl", url.ToString().TrimEnd('/') },
+                new[] { "Reporting.ApiKeyProtected", ApiKeyProtector.Protect(rest[1]) },
+                new[] { "Reporting.MachineId", r.MachineId ?? "" },
+                new[] { "Reporting.ServerType", rest.Length > 2 ? rest[2] : r.ServerType ?? "" },
+                new[] { "Reporting.Tags", string.Join(",", r.Tags ?? new string[0]) },
+                new[] { "Reporting.IntervalSeconds", r.IntervalSeconds.ToString(CultureInfo.InvariantCulture) },
+                new[] { "Reporting.TimeoutSeconds", r.TimeoutSeconds.ToString(CultureInfo.InvariantCulture) },
+                new[] { "Reporting.PinnedCertificateThumbprint", r.PinnedCertificateThumbprint ?? "" },
+                new[] { "Reporting.InitialBacklogMinutes", r.InitialBacklogMinutes.ToString(CultureInfo.InvariantCulture) },
+            };
+
+            var doc = new System.Xml.Linq.XDocument(
+                new System.Xml.Linq.XComment(" Written by \"VailITMonitor.exe connect\". Overrides the Reporting.* keys in VailITMonitor.exe.config. "),
+                new System.Xml.Linq.XElement("appSettings",
+                    values.Select(v => new System.Xml.Linq.XElement("add",
+                        new System.Xml.Linq.XAttribute("key", v[0]),
+                        new System.Xml.Linq.XAttribute("value", v[1])))));
+            var file = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "reporting.config");
+            doc.Save(file);
+
+            Console.WriteLine("Saved dashboard settings to " + file + " (the API key is encrypted for this machine).");
+            if (url.Scheme == "http") Console.WriteLine("Warning: plain http sends the API key unencrypted. Use https outside a lab.");
+            Console.WriteLine("Restart the service to start reporting:  Restart-Service VailITMonitor");
+            return 0;
+        }
+
+        /// <summary>Takes one reading, sends it to the dashboard and prints what came back.</summary>
+        private static int ReportTest(MonitorSettings settings)
+        {
+            if (!settings.Reporting.HasValidUrl)
+            {
+                Console.Error.WriteLine("No dashboard configured. Run: VailITMonitor connect <url> <apiKey> [serverType]");
+                return 2;
+            }
+
+            using (var client = new DashboardClient(settings.Reporting))
+            {
+                var machine = new MachineInfo(settings);
+                Console.WriteLine("Dashboard: " + client.BaseUri + "   machine id: " + machine.MachineId);
+
+                var me = client.GetMe();
+                Console.WriteLine(me.Outcome == SendOutcome.Ok
+                    ? "  Key accepted. Dashboard name \"" + me.Value.DisplayName + "\", group \"" + me.Value.Group + "\"."
+                    : "  monitors/me: " + me.Outcome + " (" + me.Explain() + ")");
+
+                var collector = new MetricCollector(settings.Metrics);
+                collector.Prime();
+                Thread.Sleep(2000);
+                var readings = collector.Collect();
+                var now = DateTime.UtcNow;
+                var report = new VailIT.Reporting.Contracts.MonitorReport
+                {
+                    SentAtUtc = now,
+                    Monitor = machine.Build(),
+                };
+                report.Samples.Add(new VailIT.Reporting.Contracts.SampleDto
+                {
+                    TimestampUtc = new DateTime(now.Ticks - now.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc),
+                    Readings = readings.Select(x => new VailIT.Reporting.Contracts.ReadingDto { Metric = x.Metric, Instance = x.Instance, Value = x.Value }).ToList(),
+                });
+
+                var result = client.SendReport(report);
+                if (result.Outcome != SendOutcome.Ok)
+                {
+                    Console.WriteLine("  Report failed: " + result.Outcome + " (" + result.Explain() + ")");
+                    return 1;
+                }
+                Console.WriteLine("  Report accepted: " + readings.Count + " readings, dashboard time " +
+                                  result.Value.ServerTimeUtc.ToString("u", CultureInfo.InvariantCulture) + ", interval " + result.Value.ReportIntervalSeconds + "s.");
+                return 0;
+            }
         }
 
         private static int RunReport(string[] rest, MonitorSettings settings, RollupService rollups, ReportGenerator reports)

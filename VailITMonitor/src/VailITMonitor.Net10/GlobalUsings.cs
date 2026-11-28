@@ -3,6 +3,7 @@
 // common System.* ones (System, System.IO, System.Linq, ...) the same way.
 global using VailITMonitor.Collection;
 global using VailITMonitor.Configuration;
+global using VailITMonitor.Dashboard;
 global using VailITMonitor.Processing;
 global using VailITMonitor.Reporting;
 global using VailITMonitor.Storage;
